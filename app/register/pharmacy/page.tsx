@@ -322,9 +322,7 @@ export default function PharmacistRegistration() {
                         className="mt-1 w-5 h-5 accent-blue-600"
                       />
                       <span className="text-sm leading-relaxed">
-                        I confirm that all the information I have provided is true and accurate. 
-                        I understand that any false information may result in rejection of my application 
-                        and possible disciplinary measures by the Pharmacy and Poisons Board (PPB).
+                        I hereby solemnly declare and warrant that all information provided by me during the registration process is true, accurate, complete, and not misleading in any material respect, to the best of my knowledge and belief; I acknowledge that such information shall be relied upon for medical assessment and service delivery, and I expressly accept that any false statement, misrepresentation, or omission of material facts may result in the suspension or termination of my access to the platform and its services; furthermore, I acknowledge and agree that the provision of false or misleading information may constitute an offense under the applicable laws of the Republic of Kenya, and I accept full legal responsibility including costs and liability,  including the possibility of investigation and prosecution in accordance with such laws.
                       </span>
                     </label>
                     {form.formState.errors.consentGiven && <p className="text-red-500 text-sm mt-3">{form.formState.errors.consentGiven.message}</p>}
