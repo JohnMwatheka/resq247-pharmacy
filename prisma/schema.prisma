@@ -1,0 +1,85 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                    String      @id @default(cuid())
+  phone                 String      @unique
+  email                 String      @unique
+  nationalId            String?     @unique
+  fullName              String
+  dateOfBirth           DateTime?
+  gender                String?
+  address               String?
+
+  role                  Role        @default(PHARMACIST)
+  status                UserStatus  @default(PENDING)
+
+  // PPB & Professional Fields
+  ppbRegistrationNumber String?     @unique
+  ppbPracticingLicense  String?     @unique
+  licenseExpiryDate     DateTime?
+  qualification         String?
+  yearsOfExperience     Int?
+
+  // Security
+  password              String?     // We'll hash this later
+  posPinHash            String?
+
+  // Documents & Consent
+  documents             Json?
+  consentGiven          Boolean     @default(false)
+
+  // Approval workflow
+  onboardingCompletedAt DateTime?
+  approvedBy            String?
+  approvedAt            DateTime?
+  rejectionReason       String?
+
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  @@map("users")
+}
+model OtpCode {
+  id          String   @id @default(cuid())
+  email       String
+  otpHash     String   // We store hashed OTP (never plaintext)
+  expiresAt   DateTime
+  attempts    Int      @default(0)
+  purpose     OtpPurpose @default(LOGIN)
+
+  createdAt   DateTime @default(now())
+
+  @@index([email, purpose])
+  @@index([expiresAt])
+  @@map("otp_codes")
+}
+
+enum OtpPurpose {
+  LOGIN
+  REGISTRATION
+  PASSWORD_RESET
+}
+
+enum Role {
+  PHARMACIST
+  PHARMACY_ADMIN
+}
+
+enum UserStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
