@@ -6,181 +6,103 @@ import { prisma } from '../../../../lib/prisma';
 import { sendOtpEmail } from '../../../../lib/mailgun';
 import crypto from 'crypto';
 
-const requestOtpSchema = z.object({
-  email: z.string().email('Valid email is required'),
-});
-
+const requestOtpSchema = z.object({ email: z.string().email() });
 const verifyOtpSchema = z.object({
   email: z.string().email(),
-  otp: z.string().length(6, 'OTP must be 6 digits'),
+  otp: z.string().length(6),
 });
 
-// Helper: Generate secure 6-digit OTP
-function generateOtp(): string {
+function generateOtp() {
   return crypto.randomInt(100000, 999999).toString();
 }
 
-// Helper: Hash OTP (never store plain text)
-async function hashOtp(otp: string): Promise<string> {
+async function hashOtp(otp: string) {
   return await bcrypt.hash(otp, 10);
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { action } = body;
+    const { action, email, otp } = body;
 
-    // === STEP 1: Request OTP ===
-    if (action === 'request_otp') {
-      const { email } = requestOtpSchema.parse(body);
+    // ====================== SEND OTP ======================
+    if (action === "send" || action === "request_otp") {
+      const { email: validEmail } = requestOtpSchema.parse({ email });
 
-      // Check if user exists and is approved
+      const normalizedEmail = validEmail.toLowerCase().trim();
+
       const user = await prisma.user.findUnique({
-        where: { email: email.toLowerCase() },
-        select: { id: true, status: true, fullName: true },
+        where: { email: normalizedEmail },
+        select: { id: true, status: true },
       });
 
-      if (!user) {
-        return NextResponse.json({
-          success: false,
-          error: 'USER_NOT_FOUND',
-          message: 'No account found with this email.',
-        }, { status: 404 });
-      }
+      if (!user) return NextResponse.json({ success: false, message: "No account found with this email." }, { status: 404 });
+      if (user.status !== "APPROVED") return NextResponse.json({ success: false, message: "Account not approved yet." }, { status: 403 });
 
-      if (user.status !== 'APPROVED') {
-        return NextResponse.json({
-          success: false,
-          error: 'ACCOUNT_NOT_APPROVED',
-          message: 'Your account is still under review or has been rejected.',
-        }, { status: 403 });
-      }
+      await prisma.otpCode.deleteMany({ where: { email: normalizedEmail, purpose: "LOGIN" } });
 
-      // Delete any existing OTP for this email + LOGIN purpose
-      await prisma.otpCode.deleteMany({
-        where: { email: email.toLowerCase(), purpose: 'LOGIN' },
-      });
-
-      const otp = generateOtp();
-      const otpHash = await hashOtp(otp);
-      const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+      const newOtp = generateOtp();
+      const otpHash = await hashOtp(newOtp);
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
       await prisma.otpCode.create({
-        data: {
-          email: email.toLowerCase(),
-          otpHash,
-          expiresAt,
-          purpose: 'LOGIN',
-        },
+        data: { email: normalizedEmail, otpHash, expiresAt, purpose: "LOGIN" },
       });
 
-      // Send OTP via Mailgun
-      await sendOtpEmail(email, otp, 'Login');
+      await sendOtpEmail(validEmail, newOtp, "Login");
 
-      return NextResponse.json({
-        success: true,
-        message: 'OTP sent to your email. Please check your inbox (and spam folder).',
-      });
+      return NextResponse.json({ success: true, message: "OTP sent successfully" });
     }
 
-    // === STEP 2: Verify OTP & Login ===
-    if (action === 'verify_otp') {
-      const { email, otp } = verifyOtpSchema.parse(body);
+    // ====================== VERIFY OTP ======================
+    if (action === "verify" || action === "verify_otp") {
+      const { email: validEmail, otp: validOtp } = verifyOtpSchema.parse({ email, otp });
+
+      const normalizedEmail = validEmail.toLowerCase().trim();
 
       const otpRecord = await prisma.otpCode.findFirst({
         where: {
-          email: email.toLowerCase(),
-          purpose: 'LOGIN',
+          email: normalizedEmail,
+          purpose: "LOGIN",
           expiresAt: { gt: new Date() },
         },
       });
 
       if (!otpRecord) {
-        return NextResponse.json({
-          success: false,
-          error: 'OTP_EXPIRED',
-          message: 'OTP has expired or is invalid. Please request a new one.',
-        }, { status: 400 });
+        return NextResponse.json({ success: false, message: "OTP has expired or is invalid." }, { status: 400 });
       }
 
-      // Check attempts (anti-brute force)
-      if (otpRecord.attempts >= 5) {
-        await prisma.otpCode.delete({ where: { id: otpRecord.id } });
-        return NextResponse.json({
-          success: false,
-          error: 'TOO_MANY_ATTEMPTS',
-          message: 'Too many failed attempts. Please request a new OTP.',
-        }, { status: 429 });
-      }
+      const isValid = await bcrypt.compare(validOtp, otpRecord.otpHash);
 
-      const isValidOtp = await bcrypt.compare(otp, otpRecord.otpHash);
-
-      if (!isValidOtp) {
-        // Increment failed attempts
+      if (!isValid) {
         await prisma.otpCode.update({
           where: { id: otpRecord.id },
           data: { attempts: { increment: 1 } },
         });
-
-        return NextResponse.json({
-          success: false,
-          error: 'INVALID_OTP',
-          message: 'Incorrect OTP. Please try again.',
-        }, { status: 400 });
+        return NextResponse.json({ success: false, message: "Incorrect OTP" }, { status: 400 });
       }
 
-      // OTP is valid → Delete it (single use)
+      // Delete OTP after successful verification
       await prisma.otpCode.delete({ where: { id: otpRecord.id } });
 
-      // Get full user for session/JWT
       const user = await prisma.user.findUnique({
-        where: { email: email.toLowerCase() },
-        select: {
-          id: true,
-          email: true,
-          fullName: true,
-          role: true,
-          status: true,
-          phone: true,
-        },
+        where: { email: normalizedEmail },
+        select: { id: true, email: true, fullName: true, role: true, phone: true },
       });
-
-      if (!user) {
-        return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 });
-      }
-
-      // TODO: Create session or JWT token here
-      // For now, return user data (you can integrate next-auth, lucia, or custom JWT)
 
       return NextResponse.json({
         success: true,
-        message: 'Login successful',
-        user: {
-          id: user.id,
-          email: user.email,
-          fullName: user.fullName,
-          role: user.role,
-          phone: user.phone,
-        },
+        message: "Login successful",
+        user,
       });
     }
 
-    return NextResponse.json({ success: false, message: 'Invalid action' }, { status: 400 });
-
+    return NextResponse.json({ success: false, message: "Invalid action" }, { status: 400 });
   } catch (error: any) {
-    if (error.name === 'ZodError') {
-      return NextResponse.json({
-        success: false,
-        error: 'VALIDATION_ERROR',
-        message: error.errors[0]?.message,
-      }, { status: 400 });
+    console.error("Login API Error:", error);
+    if (error.name === "ZodError") {
+      return NextResponse.json({ success: false, message: error.errors[0]?.message }, { status: 400 });
     }
-
-    console.error('Login OTP error:', error);
-    return NextResponse.json({
-      success: false,
-      error: 'INTERNAL_ERROR',
-      message: 'Something went wrong. Please try again.',
-    }, { status: 500 });
+    return NextResponse.json({ success: false, message: "Internal server error" }, { status: 500 });
   }
 }

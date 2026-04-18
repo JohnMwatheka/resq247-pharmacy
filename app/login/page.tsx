@@ -1,294 +1,329 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import { useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { motion, AnimatePresence } from 'framer-motion';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import React from 'react';
+import { useState, useEffect, useRef } from "react";
+import { useForm } from "react-hook-form";
+import { useRouter } from "next/navigation";
+import Image from "next/image";
+import Swal from "sweetalert2";
+import { ArrowLeft } from "lucide-react";
 
-const requestOtpSchema = z.object({
-  email: z.string().email('Please enter a valid email address'),
-});
-
-const verifyOtpSchema = z.object({
-  email: z.string().email(),
-  otp: z.string().length(6, 'OTP must be exactly 6 digits'),
-});
-
-type RequestOtpForm = z.infer<typeof requestOtpSchema>;
-type VerifyOtpForm = z.infer<typeof verifyOtpSchema>;
+type FormData = { otp: string };
 
 export default function LoginPage() {
-  const [step, setStep] = useState<'email' | 'otp'>('email');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [emailForOtp, setEmailForOtp] = useState('');
-  const [resendTimer, setResendTimer] = useState(0);
+  const [email, setEmail] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
 
   const router = useRouter();
+  const otpInputRef = useRef<HTMLInputElement>(null);
 
-  // Form for requesting OTP
-  const requestForm = useForm<RequestOtpForm>({
-    resolver: zodResolver(requestOtpSchema),
-    defaultValues: { email: '' },
-  });
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+    reset,
+    setValue,
+  } = useForm<FormData>();
 
-  // Form for verifying OTP
-  const verifyForm = useForm<VerifyOtpForm>({
-    resolver: zodResolver(verifyOtpSchema),
-    defaultValues: { email: '', otp: '' },
-  });
-
-  // Timer for Resend OTP
-  React.useEffect(() => {
-    if (resendTimer > 0) {
-      const interval = setInterval(() => {
-        setResendTimer((prev) => prev - 1);
-      }, 1000);
-      return () => clearInterval(interval);
+  // Auto focus OTP input
+  useEffect(() => {
+    if (otpSent && otpInputRef.current) {
+      otpInputRef.current.focus();
     }
-  }, [resendTimer]);
+  }, [otpSent]);
 
-  const requestOtp = async (data: RequestOtpForm) => {
-    setIsSubmitting(true);
-    setMessage(null);
+  // Resend cooldown timer
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (resendCooldown > 0) {
+      timer = setTimeout(() => setResendCooldown((prev) => prev - 1), 1000);
+    }
+    return () => clearTimeout(timer);
+  }, [resendCooldown]);
+
+  // SweetAlert Toaster
+  const showToast = (title: string, icon: 'success' | 'error' | 'warning') => {
+    Swal.fire({
+      title,
+      icon,
+      toast: true,
+      position: 'top-end',
+      showConfirmButton: false,
+      timer: 4000,
+      timerProgressBar: true,
+      customClass: {
+        popup: 'swal-toast',
+      },
+    });
+  };
+
+  const callLoginApi = async (payload: any) => {
+    setIsLoading(true);
 
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'request_otp',
-          email: data.email,
-        }),
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
 
-      const result = await response.json();
+      const result = await res.json();
 
-      if (result.success) {
-        setEmailForOtp(data.email);
-        verifyForm.setValue('email', data.email);
-        setStep('otp');
-        setResendTimer(60); // 60 seconds cooldown
-        setMessage({ type: 'success', text: 'OTP sent successfully! Check your email.' });
-      } else {
-        setMessage({ type: 'error', text: result.message || 'Failed to send OTP' });
+      if (!res.ok || !result.success) {
+        throw new Error(result.message || "Request failed");
       }
-    } catch (error) {
-      setMessage({ type: 'error', text: 'Network error. Please try again.' });
+
+      if (payload.action === "send") {
+        setOtpSent(true);
+        setResendCooldown(60);
+        showToast("OTP sent successfully! Please check your email.", "success");
+        return;
+      }
+
+      // Successful OTP Verification
+      if (result.user) {
+        localStorage.setItem("user", JSON.stringify(result.user));
+      }
+
+      showToast("Login successful! redirecting...", "success");
+      setTimeout(() => router.push("/dashboard"), 1500);
+    } catch (err: any) {
+      showToast(err.message || "Something went wrong. Please try again.", "error");
+      console.error("Login error:", err);
     } finally {
-      setIsSubmitting(false);
+      setIsLoading(false);
     }
   };
 
-  const verifyOtp = async (data: VerifyOtpForm) => {
-    setIsSubmitting(true);
-    setMessage(null);
-
-    try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'verify_otp',
-          email: data.email,
-          otp: data.otp,
-        }),
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        setMessage({ type: 'success', text: 'Login successful! Redirecting...' });
-        
-        // Save user info if needed (or use context / next-auth)
-        localStorage.setItem('user', JSON.stringify(result.user));
-        
-        // Redirect to dashboard
-        setTimeout(() => {
-          router.push('/dashboard');
-        }, 1500);
-      } else {
-        setMessage({ type: 'error', text: result.message || 'Invalid OTP' });
-      }
-    } catch (error) {
-      setMessage({ type: 'error', text: 'Network error. Please try again.' });
-    } finally {
-      setIsSubmitting(false);
+  const sendOTP = async () => {
+    if (!email.trim()) {
+      showToast("Please enter a valid email address", "error");
+      return;
     }
+
+    await callLoginApi({ 
+      email: email.trim().toLowerCase(), 
+      action: "send" 
+    });
   };
 
-  const resendOtp = async () => {
-    if (resendTimer > 0) return;
+  const verifyOTP = async (data: FormData) => {
+    await callLoginApi({
+      email: email.trim().toLowerCase(),
+      otp: data.otp.trim(),
+      action: "verify",
+    });
+  };
 
-    setMessage(null);
-    try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'request_otp',
-          email: emailForOtp,
-        }),
-      });
+  const handleResend = async () => {
+    if (resendCooldown > 0) return;
+    await sendOTP();
+  };
 
-      const result = await response.json();
-
-      if (result.success) {
-        setResendTimer(60);
-        setMessage({ type: 'success', text: 'New OTP sent successfully!' });
-      } else {
-        setMessage({ type: 'error', text: result.message });
-      }
-    } catch (error) {
-      setMessage({ type: 'error', text: 'Failed to resend OTP' });
-    }
+  const handleBack = () => {
+    setOtpSent(false);
+    reset();
+    setValue("otp", "");
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-12">
-      <div className="max-w-md mx-auto px-4">
-        <div className="bg-white rounded-3xl shadow-xl p-8">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">Welcome Back</h1>
-            <p className="text-gray-600 mt-2">Sign in to your ResQ247 Pharmacy account</p>
+    <main className="flex items-center justify-center min-h-screen p-4 bg-linear-to-tl from-white/55 to-white">
+      <div className="w-full max-w-5xl">
+
+        {/* Desktop Layout */}
+        <div className="hidden lg:grid lg:grid-cols-2 bg-white rounded-2xl shadow-xl overflow-hidden min-h-120">
+          <div className="flex flex-col items-center justify-center p-10 bg-linear-to-r from-blue-200 to-white">
+            <Image 
+              src="/logo.png" 
+              alt="ResQ247 Logo" 
+              width={140} 
+              height={140} 
+              className="object-contain" 
+              priority 
+            />
+            <h1 className="text-3xl font-bold text-blue-950 mt-6">Welcome Back</h1>
+            <p className="text-base text-gray-600 text-center mt-1">Sign in with OTP</p>
           </div>
 
-          <AnimatePresence mode="wait">
-            {/* Step 1: Email Input */}
-            {step === 'email' && (
-              <motion.div
-                key="email-step"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-              >
-                <form onSubmit={requestForm.handleSubmit(requestOtp)} className="space-y-6">
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Email Address</label>
-                    <input
-                      type="email"
-                      {...requestForm.register('email')}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-blue-600 text-lg"
-                      placeholder="john@example.com"
-                      disabled={isSubmitting}
-                    />
-                    {requestForm.formState.errors.email && (
-                      <p className="text-red-500 text-sm mt-1">
-                        {requestForm.formState.errors.email.message}
-                      </p>
-                    )}
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 rounded-2xl transition-all disabled:opacity-70"
-                  >
-                    {isSubmitting ? 'Sending OTP...' : 'Send Verification Code'}
-                  </button>
-                </form>
-              </motion.div>
-            )}
-
-            {/* Step 2: OTP Input */}
-            {step === 'otp' && (
-              <motion.div
-                key="otp-step"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-              >
-                <div className="text-center mb-6">
-                  <h2 className="text-xl font-semibold">Enter Verification Code</h2>
-                  <p className="text-gray-600 mt-1">
-                    We sent a 6-digit code to <br />
-                    <span className="font-medium text-gray-900">{emailForOtp}</span>
-                  </p>
-                </div>
-
-                <form onSubmit={verifyForm.handleSubmit(verifyOtp)} className="space-y-6">
-                  <div>
-                    <label className="block text-sm font-medium mb-2">Verification Code</label>
-                    <input
-                      type="text"
-                      maxLength={6}
-                      {...verifyForm.register('otp')}
-                      className="w-full px-6 py-5 border border-gray-300 rounded-2xl focus:outline-none focus:border-blue-600 text-3xl tracking-[12px] text-center font-mono"
-                      placeholder="123456"
-                      disabled={isSubmitting}
-                    />
-                    {verifyForm.formState.errors.otp && (
-                      <p className="text-red-500 text-sm mt-1 text-center">
-                        {verifyForm.formState.errors.otp.message}
-                      </p>
-                    )}
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-4 rounded-2xl transition-all disabled:opacity-70"
-                  >
-                    {isSubmitting ? 'Verifying...' : 'Verify & Sign In'}
-                  </button>
-
-                  <div className="text-center">
-                    <button
-                      type="button"
-                      onClick={resendOtp}
-                      disabled={resendTimer > 0}
-                      className="text-blue-600 hover:text-blue-700 text-sm font-medium disabled:text-gray-400"
-                    >
-                      {resendTimer > 0 
-                        ? `Resend OTP in ${resendTimer}s` 
-                        : 'Resend OTP'}
-                    </button>
-                  </div>
-                </form>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Message Display */}
-          {message && (
-            <div className={`mt-6 p-4 rounded-2xl text-center text-sm font-medium border ${
-              message.type === 'success'
-                ? 'bg-green-50 text-green-700 border-green-200'
-                : 'bg-red-50 text-red-700 border-red-200'
-            }`}>
-              {message.text}
+          <div className="flex flex-col items-center justify-center p-8">
+            <div className="w-full max-w-sm">
+              <LoginFormContent
+                email={email}
+                setEmail={setEmail}
+                otpSent={otpSent}
+                isLoading={isLoading}
+                resendCooldown={resendCooldown}
+                sendOTP={sendOTP}
+                verifyOTP={verifyOTP}
+                handleBack={handleBack}
+                handleResend={handleResend}
+                register={register}
+                handleSubmit={handleSubmit}
+                errors={errors}
+                otpInputRef={otpInputRef}
+                setValue={setValue}
+              />
             </div>
-          )}
+          </div>
+        </div>
 
-          {/* Back to Email Step */}
-          {step === 'otp' && (
-            <div className="mt-6 text-center">
-              <button
-                type="button"
-                onClick={() => {
-                  setStep('email');
-                  setMessage(null);
-                }}
-                className="text-gray-500 hover:text-gray-700 text-sm"
-              >
-                ← Change Email
-              </button>
+        {/* Mobile Layout */}
+        <div className="lg:hidden bg-white shadow-xl rounded-2xl overflow-hidden">
+          <div className="p-6">
+            <div className="flex justify-center mb-6">
+              <Image 
+                src="/logo.png" 
+                alt="ResQ247 Logo" 
+                width={110} 
+                height={110} 
+                className="object-contain" 
+                priority 
+              />
             </div>
-          )}
+            <h1 className="text-2xl font-bold text-center text-blue-950 mb-1">Welcome Back</h1>
+            <p className="text-center text-gray-600 mb-8 text-sm">Sign in with OTP</p>
 
-          <div className="mt-8 text-center text-sm text-gray-500">
-            Don&apos;t have an account?{' '}
-            <Link href="/register" className="text-blue-600 hover:underline font-medium">
-              Register as Pharmacist
-            </Link>
+            <div className="max-w-sm mx-auto">
+              <LoginFormContent
+                email={email}
+                setEmail={setEmail}
+                otpSent={otpSent}
+                isLoading={isLoading}
+                resendCooldown={resendCooldown}
+                sendOTP={sendOTP}
+                verifyOTP={verifyOTP}
+                handleBack={handleBack}
+                handleResend={handleResend}
+                register={register}
+                handleSubmit={handleSubmit}
+                errors={errors}
+                otpInputRef={otpInputRef}
+                setValue={setValue}
+              />
+            </div>
           </div>
         </div>
       </div>
+    </main>
+  );
+}
+
+// ====================== FORM CONTENT COMPONENT ======================
+interface LoginFormContentProps {
+  email: string;
+  setEmail: (email: string) => void;
+  otpSent: boolean;
+  isLoading: boolean;
+  resendCooldown: number;
+  sendOTP: () => Promise<void>;
+  verifyOTP: (data: FormData) => Promise<void>;
+  handleBack: () => void;
+  handleResend: () => Promise<void>;
+  register: any;
+  handleSubmit: any;
+  errors: any;
+  otpInputRef: React.RefObject<HTMLInputElement | null>;
+  setValue: (name: "otp", value: string) => void;
+}
+
+function LoginFormContent({
+  email,
+  setEmail,
+  otpSent,
+  isLoading,
+  resendCooldown,
+  sendOTP,
+  verifyOTP,
+  handleBack,
+  handleResend,
+  register,
+  handleSubmit,
+  errors,
+  otpInputRef,
+  setValue,
+}: LoginFormContentProps) {
+  return (
+    <div className="space-y-5 text-sm">
+      <div className="space-y-1.5">
+        <label className="block text-xs font-medium text-gray-700">Email Address</label>
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="w-full px-4 py-3 text-sm border border-gray-300 rounded-xl focus:outline-none focus:border-blue-600"
+          placeholder="someone@example.com"
+          disabled={isLoading || otpSent}
+        />
+      </div>
+
+      {!otpSent ? (
+        <button
+          onClick={sendOTP}
+          disabled={isLoading || !email.trim()}
+          className="w-full py-3.5 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-xl disabled:opacity-70 transition"
+        >
+          {isLoading ? "Sending OTP..." : "Send Verification Code"}
+        </button>
+      ) : (
+        <form onSubmit={handleSubmit(verifyOTP)} className="space-y-5">
+          <div className="space-y-1.5">
+            <label className="block text-xs font-medium text-gray-700">
+              Enter 6-digit code sent to <span className="font-semibold">{email}</span>
+            </label>
+            <input
+              ref={otpInputRef}
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              className="w-full px-5 py-4 border border-gray-300 rounded-xl focus:outline-none focus:border-blue-600 text-2xl tracking-[8px] text-center font-mono"
+              placeholder="123456"
+              {...register("otp", {
+                requiblue: "OTP is requiblue",
+                pattern: { value: /^\d{6}$/, message: "OTP must be exactly 6 digits" },
+              })}
+              onChange={(e) => {
+                const value = e.target.value.replace(/\D/g, "").slice(0, 6);
+                e.target.value = value;
+                setValue("otp", value);
+              }}
+            />
+            {errors.otp && <p className="text-blue-600 text-xs text-center">{errors.otp.message}</p>}
+          </div>
+
+          <div className="flex gap-18">
+            <button
+              type="button"
+              onClick={handleBack}
+              disabled={isLoading}
+              className="flex items-center gap-2 px-4 py-4 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md shadow-sm hover:shadow transition-all duration-200 disabled:opacity-70"
+            >
+              <ArrowLeft size={20} />
+              Back
+            </button>
+
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="flex items-center gap-2 px-4 py-4 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md shadow-sm hover:shadow transition-all duration-200 disabled:opacity-70"
+            >
+              {isLoading ? "Verifying..." : "Verify & Sign In"}
+            </button>
+          </div>
+
+          <div className="text-center">
+            <button
+              type="button"
+              onClick={handleResend}
+              disabled={resendCooldown > 0 || isLoading}
+              className="text-blue-950 hover:underline text-xs disabled:text-gray-400"
+            >
+              {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend OTP"}
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }

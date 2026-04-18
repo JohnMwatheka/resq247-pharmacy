@@ -1,15 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';        // ← Added this
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Package, 
-  Search, 
-  Plus, 
-  Filter, 
-  Edit2, 
-  Trash2, 
-  AlertTriangle 
+  Package, Search, Plus, Edit2, Trash2, AlertTriangle 
 } from 'lucide-react';
 
 import {
@@ -31,244 +26,335 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Card, CardContent } from '@/components/ui/card';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
-interface InventoryItem {
+interface Medicine {
   id: string;
-  name: string;
-  category: string;
+  medicineName: string;
+  supplierName: string;
+  packing: string;
+  genericName: string;
+  expireDate: string;
+  orderDate: string;
   stock: number;
   minStock: number;
-  price: number;
-  expiryDate: string;
-  lastUpdated: string;
 }
 
-const mockInventory: InventoryItem[] = [
-  { id: '1', name: 'Paracetamol 500mg', category: 'Analgesics', stock: 1240, minStock: 200, price: 45, expiryDate: '2027-06-15', lastUpdated: '2 hours ago' },
-  { id: '2', name: 'Amoxicillin 250mg', category: 'Antibiotics', stock: 85, minStock: 150, price: 120, expiryDate: '2026-11-20', lastUpdated: 'Yesterday' },
-  { id: '3', name: 'Cetirizine 10mg', category: 'Antihistamines', stock: 450, minStock: 100, price: 65, expiryDate: '2027-03-10', lastUpdated: '3 days ago' },
-  { id: '4', name: 'Omeprazole 20mg', category: 'Gastro', stock: 320, minStock: 80, price: 85, expiryDate: '2026-09-05', lastUpdated: '1 week ago' },
-  { id: '5', name: 'Metformin 500mg', category: 'Diabetes', stock: 12, minStock: 50, price: 95, expiryDate: '2026-08-30', lastUpdated: '2 days ago' },
+const mockMedicines: Medicine[] = [
+  {
+    id: '1',
+    medicineName: 'Cetirizine',
+    supplierName: 'Square',
+    packing: '50tab',
+    genericName: 'Cetirizine',
+    expireDate: 'Mar 23, 2026',
+    orderDate: 'Feb 24, 2025',
+    stock: 45,
+    minStock: 100,
+  },
+  {
+    id: '2',
+    medicineName: 'Omeprazole',
+    supplierName: 'Sorkar Drug',
+    packing: '25tab',
+    genericName: 'Omeprazole',
+    expireDate: 'Apr 12, 2026',
+    orderDate: 'Feb 25, 2025',
+    stock: 120,
+    minStock: 80,
+  },
+  {
+    id: '3',
+    medicineName: 'Atorvastatin',
+    supplierName: 'Beximco',
+    packing: '10tab',
+    genericName: 'Atorvastatin',
+    expireDate: 'Jun 17, 2026',
+    orderDate: 'Feb 26, 2025',
+    stock: 25,
+    minStock: 60,
+  },
+  {
+    id: '4',
+    medicineName: 'Metformin',
+    supplierName: 'Renata',
+    packing: '30tab',
+    genericName: 'Metformin',
+    expireDate: 'Jul 10, 2026',
+    orderDate: 'Feb 27, 2025',
+    stock: 180,
+    minStock: 100,
+  },
 ];
 
-export default function InventoryPage() {
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+export default function MedicinePage() {
+  const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [filterLowStock, setFilterLowStock] = useState(false);
 
-  // Simulate data loading
+  const router = useRouter();   // ← Added router
+
   useEffect(() => {
     setTimeout(() => {
-      setInventory(mockInventory);
+      setMedicines(mockMedicines);
       setIsLoading(false);
-    }, 900);
+    }, 700);
   }, []);
 
-  const filteredInventory = inventory
-    .filter(item => 
-      item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.category.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-    .filter(item => !filterLowStock || item.stock <= item.minStock);
+  const filteredMedicines = medicines.filter(item =>
+    item.medicineName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    item.supplierName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    item.genericName.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-  const lowStockCount = inventory.filter(item => item.stock <= item.minStock).length;
+  // Compact statistics
+  const stats = [
+    { title: 'Total Medicine', value: '36,759', change: '+16%' },
+    { title: 'New Medicine', value: '12,453', change: '+0.9%' },
+    { title: 'Today Selling', value: '18,657', change: '+15%' },
+    { title: 'Total Order Today', value: '2,758', change: '+0.7%' },
+  ];
+
+  const isLowStock = (item: Medicine) => item.stock <= item.minStock;
+
+  // Handle Add New Medicine Click
+  const handleAddNewMedicine = () => {
+    router.push('/medicine/add');     // ← Redirects to Add Medicine Page
+  };
 
   return (
-    <SidebarProvider>
-      <div className="flex h-screen w-full overflow-hidden bg-gray-50/50">
-        {/* Sidebar - Same as Dashboard */}
-        <Sidebar className="border-r border-gray-200/60">
-          <SidebarHeader className="border-b border-gray-200/60 px-5 py-6">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-sm">
-                <span className="text-white font-bold text-xl">R</span>
+    <TooltipProvider>
+      <SidebarProvider>
+        <div className="flex h-screen w-full overflow-hidden bg-gray-50">
+          {/* Sidebar - Compact */}
+          <Sidebar className="border-r border-gray-200 w-60">
+            <SidebarHeader className="border-b px-5 py-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 bg-linear-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center">
+                  <span className="text-white font-bold text-xl">R</span>
+                </div>
+                <div>
+                  <h1 className="text-lg font-bold tracking-tight">ResQ247</h1>
+                  <p className="text-[10px] text-gray-500 -mt-0.5">PHARMACY</p>
+                </div>
               </div>
-              <div>
-                <h1 className="text-lg font-semibold tracking-tight">ResQ247</h1>
-                <p className="text-[9px] text-gray-500 -mt-0.5 tracking-wider">PHARMACY</p>
+            </SidebarHeader>
+
+            <SidebarContent className="px-2 py-5">
+              <SidebarGroup>
+                <SidebarGroupLabel className="px-3 text-[10px] tracking-widest text-gray-500 mb-3">MENU</SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {[
+                      { title: 'Dashboard' },
+                      { title: 'Purchase' },
+                      { title: 'Sale' },
+                      { title: 'Product' },
+                      { title: 'Suppliers' },
+                    ].map((item) => (
+                      <SidebarMenuItem key={item.title}>
+                        <SidebarMenuButton isActive={item.title === 'Product'} className="py-2 text-sm">
+                          <Package className="w-4 h-4 mr-3" />
+                          {item.title}
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+
+              <SidebarGroup className="mt-7">
+                <SidebarGroupLabel className="px-3 text-[10px] tracking-widest text-gray-500 mb-3">OTHERS</SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {[
+                      { title: 'Customer' },
+                      { title: 'Medicine', active: true },
+                      { title: 'Invoice' },
+                      { title: 'Orders' },
+                    ].map((item) => (
+                      <SidebarMenuItem key={item.title}>
+                        <SidebarMenuButton isActive={item.active} className="py-2 text-sm">
+                          <Package className="w-4 h-4 mr-3" />
+                          {item.title}
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            </SidebarContent>
+
+            <SidebarFooter className="border-t p-4">
+              <div className="flex items-center gap-3 p-2 rounded-xl hover:bg-gray-100">
+                <Avatar className="h-8 w-8">
+                  <AvatarFallback className="bg-blue-100 text-blue-700 text-xs font-medium">JK</AvatarFallback>
+                </Avatar>
+                <div className="text-xs">
+                  <p className="font-medium">John Kamau</p>
+                  <p className="text-gray-500">john@resq247.co.ke</p>
+                </div>
               </div>
-            </div>
-          </SidebarHeader>
+            </SidebarFooter>
+          </Sidebar>
 
-          <SidebarContent className="px-2 py-4">
-            <SidebarGroup>
-              <SidebarGroupLabel className="px-3 text-[10px] tracking-wider text-gray-400 mb-2">MAIN</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {[
-                    { title: 'Dashboard', icon: Package, href: '/dashboard' },
-                    { title: 'POS', icon: Package, href: '/pos' }, // Replace with correct icons later
-                    { title: 'Inventory', icon: Package, href: '/inventory', active: true },
-                    { title: 'Orders', icon: Package, href: '/orders' },
-                  ].map((item) => (
-                    <SidebarMenuItem key={item.title}>
-                      <SidebarMenuButton asChild isActive={item.active}>
-                        <a href={item.href} className="flex items-center gap-2.5 py-2.5 px-3 rounded-xl text-sm">
-                          <item.icon className="w-4 h-4" />
-                          <span>{item.title}</span>
-                        </a>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          </SidebarContent>
+          {/* Main Content */}
+          <SidebarInset className="flex flex-col flex-1">
+            {/* Compact Header */}
+            <header className="h-14 bg-white border-b flex items-center px-6 justify-between">
+              <div className="flex items-center gap-3">
+                <SidebarTrigger />
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">☀️</span>
+                  <h1 className="text-lg font-semibold">Hello, John Kamau!</h1>
+                </div>
+              </div>
 
-          <SidebarFooter className="border-t border-gray-200/60 p-3">
-            {/* User dropdown same as dashboard */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="w-full justify-start h-auto p-2.5 rounded-xl hover:bg-gray-100/80">
-                  <Avatar className="mr-2.5 h-8 w-8">
-                    <AvatarFallback className="bg-blue-100 text-blue-700 text-xs font-medium">PH</AvatarFallback>
-                  </Avatar>
-                  <div className="text-left text-xs">
-                    <p className="font-medium truncate">John Kamau</p>
-                    <p className="text-[10px] text-gray-500 truncate">john@resq247.co.ke</p>
-                  </div>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52 rounded-xl">
-                <DropdownMenuLabel className="text-xs">My Account</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild><a href="/profile">Profile Settings</a></DropdownMenuItem>
-                <DropdownMenuItem>Help & Support</DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-red-600">Logout</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </SidebarFooter>
-        </Sidebar>
-
-        {/* Main Content */}
-        <SidebarInset className="flex flex-col flex-1">
-          <header className="h-14 bg-white/60 backdrop-blur-sm px-6 flex items-center justify-between sticky top-0 z-50 border-b border-gray-200/40">
-            <div className="flex items-center gap-3">
-              <SidebarTrigger className="hover:bg-gray-100/60 p-2 rounded-lg" />
-              <h2 className="text-lg font-semibold text-gray-900">Inventory Management</h2>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <Button className="bg-blue-600 hover:bg-blue-700 text-sm h-9 px-5 rounded-xl">
-                <Plus className="w-4 h-4 mr-2" />
-                Add New Item
-              </Button>
-            </div>
-          </header>
-
-          <main className="flex-1 overflow-auto p-6">
-            <div className="max-w-6xl mx-auto">
-              {/* Controls */}
-              <div className="flex flex-col sm:flex-row gap-4 mb-6">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <Input 
-                    placeholder="Search medicines..." 
+              <div className="flex items-center gap-4">
+                <div className="relative w-72">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Input
+                    placeholder="Search anything"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10 h-10 bg-white border-gray-200 rounded-xl"
+                    className="pl-10 h-9 text-sm bg-gray-50 border-gray-200 rounded-full"
                   />
                 </div>
 
-                <Button 
-                  variant={filterLowStock ? "default" : "outline"}
-                  onClick={() => setFilterLowStock(!filterLowStock)}
-                  className="h-10 px-5 rounded-xl flex items-center gap-2"
-                >
-                  <Filter className="w-4 h-4" />
-                  Low Stock Only {lowStockCount > 0 && `(${lowStockCount})`}
-                </Button>
+                <Avatar className="h-8 w-8">
+                  <AvatarFallback className="text-xs">JK</AvatarFallback>
+                </Avatar>
               </div>
+            </header>
 
-              {/* Inventory Table */}
-              <div className="bg-white rounded-2xl border border-gray-200/60 overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-gray-100 bg-gray-50">
-                        <th className="text-left py-4 px-6 text-xs font-medium text-gray-500">MEDICINE</th>
-                        <th className="text-left py-4 px-6 text-xs font-medium text-gray-500">CATEGORY</th>
-                        <th className="text-right py-4 px-6 text-xs font-medium text-gray-500">STOCK</th>
-                        <th className="text-right py-4 px-6 text-xs font-medium text-gray-500">MIN STOCK</th>
-                        <th className="text-right py-4 px-6 text-xs font-medium text-gray-500">PRICE (KES)</th>
-                        <th className="text-left py-4 px-6 text-xs font-medium text-gray-500">EXPIRY</th>
-                        <th className="text-center py-4 px-6 text-xs font-medium text-gray-500">ACTIONS</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <AnimatePresence>
-                        {isLoading ? (
-                          [...Array(5)].map((_, i) => (
-                            <tr key={i} className="border-b">
-                              <td colSpan={7} className="p-6"><Skeleton className="h-8 w-full" /></td>
-                            </tr>
-                          ))
-                        ) : filteredInventory.length === 0 ? (
-                          <tr>
-                            <td colSpan={7} className="text-center py-12 text-gray-500">
-                              No items found
-                            </td>
-                          </tr>
-                        ) : (
-                          filteredInventory.map((item, index) => {
-                            const isLowStock = item.stock <= item.minStock;
-                            return (
-                              <motion.tr 
-                                key={item.id}
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ delay: index * 0.03 }}
-                                className="border-b hover:bg-gray-50 transition-colors"
-                              >
-                                <td className="py-4 px-6 font-medium">{item.name}</td>
-                                <td className="py-4 px-6 text-sm text-gray-600">{item.category}</td>
-                                <td className="py-4 px-6 text-right">
-                                  <span className={`${isLowStock ? 'text-red-600 font-medium' : 'text-gray-900'}`}>
-                                    {item.stock.toLocaleString()}
-                                  </span>
-                                </td>
-                                <td className="py-4 px-6 text-right text-sm text-gray-500">{item.minStock}</td>
-                                <td className="py-4 px-6 text-right font-medium">KES {item.price}</td>
-                                <td className="py-4 px-6 text-sm text-gray-600">{item.expiryDate}</td>
-                                <td className="py-4 px-6">
-                                  <div className="flex justify-center gap-2">
-                                    <Button variant="ghost" size="icon" className="h-8 w-8">
-                                      <Edit2 className="h-3.5 w-3.5" />
-                                    </Button>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:text-red-700">
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    </Button>
-                                  </div>
-                                </td>
-                              </motion.tr>
-                            );
-                          })
-                        )}
-                      </AnimatePresence>
-                    </tbody>
-                  </table>
+            <main className="flex-1 p-5 overflow-auto">
+              <div className="max-w-6xl mx-auto">
+                {/* Title & Add Button */}
+                <div className="flex justify-between items-center mb-6">
+                  <div>
+                    <h2 className="text-2xl font-bold text-gray-900">Medicine</h2>
+                    <p className="text-xs text-gray-600 mt-0.5">
+                      Pharmacy purchase refers to buying medications and supplies.
+                    </p>
+                  </div>
+                  
+                  {/* Updated Add Button with onClick */}
+                  <Button 
+                    onClick={handleAddNewMedicine}
+                    className="bg-blue-600 hover:bg-blue-700 h-9 px-5 text-sm rounded-xl flex items-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add New Medicine
+                  </Button>
                 </div>
-              </div>
 
-              <p className="text-center text-xs text-gray-400 mt-6">
-                Showing {filteredInventory.length} of {inventory.length} items
-              </p>
-            </div>
-          </main>
-        </SidebarInset>
-      </div>
-    </SidebarProvider>
+                {/* Compact Stats Cards */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                  {stats.map((stat, index) => (
+                    <Card key={index} className="border border-gray-200 shadow-sm">
+                      <CardContent className="p-4">
+                        <p className="text-xs text-gray-500">{stat.title}</p>
+                        <p className="text-2xl font-semibold tracking-tight mt-1">{stat.value}</p>
+                        <p className="text-xs text-emerald-600 mt-2">{stat.change} since last month</p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+
+                {/* Compact Medicine Table */}
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 border-b">
+                        <tr>
+                          <th className="text-left py-3 px-5 text-xs font-medium text-gray-500">Medicine Name</th>
+                          <th className="text-left py-3 px-5 text-xs font-medium text-gray-500">Supplier</th>
+                          <th className="text-left py-3 px-5 text-xs font-medium text-gray-500">Packing</th>
+                          <th className="text-left py-3 px-5 text-xs font-medium text-gray-500">Generic Name</th>
+                          <th className="text-left py-3 px-5 text-xs font-medium text-gray-500">Expire Date</th>
+                          <th className="text-left py-3 px-5 text-xs font-medium text-gray-500">Order Date</th>
+                          <th className="text-center py-3 px-5 text-xs font-medium text-gray-500">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <AnimatePresence>
+                          {isLoading ? (
+                            Array.from({ length: 4 }).map((_, i) => (
+                              <tr key={i} className="border-b">
+                                <td colSpan={7} className="p-6">
+                                  <div className="h-5 bg-gray-100 rounded animate-pulse" />
+                                </td>
+                              </tr>
+                            ))
+                          ) : filteredMedicines.length === 0 ? (
+                            <tr>
+                              <td colSpan={7} className="py-12 text-center text-gray-500 text-sm">
+                                No medicines found
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredMedicines.map((item, index) => {
+                              const lowStock = isLowStock(item);
+                              return (
+                                <motion.tr
+                                  key={item.id}
+                                  initial={{ opacity: 0, y: 6 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  transition={{ delay: index * 0.02 }}
+                                  className={`border-b hover:bg-gray-50 transition-colors ${lowStock ? 'bg-red-50/70' : ''}`}
+                                >
+                                  <td className="py-4 px-5 font-medium flex items-center gap-2">
+                                    {item.medicineName}
+                                    {lowStock && (
+                                      <Tooltip>
+                                        <TooltipTrigger>
+                                          <AlertTriangle className="w-4 h-4 text-red-600" />
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p>Low Stock Alert: Only {item.stock} left (Min: {item.minStock})</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    )}
+                                  </td>
+                                  <td className="py-4 px-5 text-gray-600">{item.supplierName}</td>
+                                  <td className="py-4 px-5 text-gray-600">{item.packing}</td>
+                                  <td className="py-4 px-5 text-gray-600">{item.genericName}</td>
+                                  <td className="py-4 px-5 text-gray-600">{item.expireDate}</td>
+                                  <td className="py-4 px-5 text-gray-600">{item.orderDate}</td>
+                                  <td className="py-4 px-5">
+                                    <div className="flex justify-center gap-1">
+                                      <Button variant="ghost" size="icon" className="h-7 w-7">
+                                        <Edit2 className="h-3.5 w-3.5" />
+                                      </Button>
+                                      <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:text-red-700">
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </div>
+                                  </td>
+                                </motion.tr>
+                              );
+                            })
+                          )}
+                        </AnimatePresence>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <p className="text-center text-xs text-gray-400 mt-6">
+                  Showing {filteredMedicines.length} of {medicines.length} medicines
+                </p>
+              </div>
+            </main>
+          </SidebarInset>
+        </div>
+      </SidebarProvider>
+    </TooltipProvider>
   );
 }
